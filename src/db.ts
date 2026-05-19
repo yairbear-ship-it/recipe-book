@@ -47,48 +47,92 @@ class RecipeBookDB extends Dexie {
 
 export const db = new RecipeBookDB()
 
+// Seed categories use deterministic syncIds so that, if the same seed runs on
+// multiple devices, the sync engine recognises them as the same record and
+// merges them via last-write-wins instead of creating duplicates.
+//
+// IMPORTANT: never change these strings. Devices in the wild rely on them
+// being stable to deduplicate against existing copies in Drive.
+const SEED_SYNC = {
+  root_main: 'seed:cat:main-dishes',
+  root_sides: 'seed:cat:sides',
+  root_desserts: 'seed:cat:desserts',
+  meat: 'seed:cat:meat',
+  chicken: 'seed:cat:chicken',
+  fish: 'seed:cat:fish',
+  veg: 'seed:cat:veg',
+  rice: 'seed:cat:rice-pasta',
+  salads: 'seed:cat:salads',
+  cakes: 'seed:cat:cakes',
+  cookies: 'seed:cat:cookies',
+} as const
+
+const SEED_SYNC_IDS: ReadonlySet<string> = new Set(Object.values(SEED_SYNC))
+
 export async function seedIfEmpty() {
   const count = await db.categories.count()
   if (count > 0) return
   const now = Date.now()
   const main = await db.categories.add({
-    syncId: makeSyncId(),
+    syncId: SEED_SYNC.root_main,
     name: 'מנות עיקריות',
     parentId: null,
     createdAt: now,
     updatedAt: now,
   })
   const sides = await db.categories.add({
-    syncId: makeSyncId(),
+    syncId: SEED_SYNC.root_sides,
     name: 'תוספות',
     parentId: null,
     createdAt: now,
     updatedAt: now,
   })
   const desserts = await db.categories.add({
-    syncId: makeSyncId(),
+    syncId: SEED_SYNC.root_desserts,
     name: 'קינוחים',
     parentId: null,
     createdAt: now,
     updatedAt: now,
   })
-  const seed = (name: string, parentId: number) => ({
-    syncId: makeSyncId(),
+  const seed = (syncId: string, name: string, parentId: number) => ({
+    syncId,
     name,
     parentId,
     createdAt: now,
     updatedAt: now,
   })
   await db.categories.bulkAdd([
-    seed('בשר', main),
-    seed('עוף', main),
-    seed('דגים', main),
-    seed('צמחוני', main),
-    seed('אורז ופסטה', sides),
-    seed('סלטים', sides),
-    seed('עוגות', desserts),
-    seed('עוגיות', desserts),
+    seed(SEED_SYNC.meat, 'בשר', main),
+    seed(SEED_SYNC.chicken, 'עוף', main),
+    seed(SEED_SYNC.fish, 'דגים', main),
+    seed(SEED_SYNC.veg, 'צמחוני', main),
+    seed(SEED_SYNC.rice, 'אורז ופסטה', sides),
+    seed(SEED_SYNC.salads, 'סלטים', sides),
+    seed(SEED_SYNC.cakes, 'עוגות', desserts),
+    seed(SEED_SYNC.cookies, 'עוגיות', desserts),
   ])
+}
+
+// Returns true if the local DB contains only the pristine, unmodified seed
+// categories — i.e. nothing the user has actually invested in. Used by the
+// sync engine to wipe the auto-seed before pulling a remote snapshot for the
+// first time on a new device, which otherwise causes name-duplicates.
+export async function isPristineSeedOnly(): Promise<boolean> {
+  const [recipeCount, imageCount, cats] = await Promise.all([
+    db.recipes.count(),
+    db.images.count(),
+    db.categories.toArray(),
+  ])
+  if (recipeCount > 0 || imageCount > 0) return false
+  if (cats.length === 0) return false
+  // Every category must have a recognised seed syncId AND must not have been
+  // renamed (we keyed by name in the seed; the syncId match is enough).
+  return cats.every((c) => SEED_SYNC_IDS.has(c.syncId))
+}
+
+export async function clearPristineSeed(): Promise<void> {
+  // Wipe without tombstones — this is a "rollback before sync", not a delete.
+  await db.categories.clear()
 }
 
 // Helpers for the sync metadata key/value table.

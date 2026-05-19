@@ -1,4 +1,10 @@
-import { db, getSyncMeta, setSyncMeta } from '../db'
+import {
+  clearPristineSeed,
+  db,
+  getSyncMeta,
+  isPristineSeedOnly,
+  setSyncMeta,
+} from '../db'
 import type { Category, Recipe, Tombstone, AttachmentKind, AttachmentType } from '../types'
 import {
   findOrCreateFolder,
@@ -130,6 +136,15 @@ async function doSync(): Promise<void> {
     } catch (e) {
       console.warn('Failed to read remote snapshot, treating as empty:', e)
     }
+  }
+
+  // First-sync protection: if this is a fresh device whose only data is the
+  // auto-generated seed categories, wipe them before applying the remote
+  // snapshot. This prevents the name-duplication that would otherwise occur
+  // when the same default categories arrive from another device.
+  const lastSync = await getSyncMeta('lastSyncAt')
+  if (!lastSync && remote && (await isPristineSeedOnly())) {
+    await clearPristineSeed()
   }
 
   // Apply remote → local: pulls in new/updated records and honors tombstones.
