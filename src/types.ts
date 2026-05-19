@@ -1,5 +1,6 @@
 export interface Category {
   id?: number
+  syncId: string
   name: string
   parentId: number | null
   createdAt: number
@@ -11,6 +12,7 @@ export type AttachmentType = 'image' | 'pdf'
 
 export interface RecipeImage {
   id?: number
+  syncId: string
   recipeId: number
   kind: AttachmentKind
   order: number
@@ -21,10 +23,15 @@ export interface RecipeImage {
   createdAt: number
   fileType?: AttachmentType
   fileName?: string
+  // Drive sync metadata. Populated after a successful upload.
+  driveFileId?: string
+  thumbDriveFileId?: string
+  syncedAt?: number
 }
 
 export interface Recipe {
   id?: number
+  syncId: string
   title: string
   categoryId: number | null
   tags: string[]
@@ -40,4 +47,24 @@ export interface Recipe {
 export interface CategoryNode extends Category {
   children: CategoryNode[]
   recipeCount: number
+}
+
+export type TombstoneEntity = 'recipe' | 'category' | 'image'
+
+export interface Tombstone {
+  id?: number
+  entity: TombstoneEntity
+  syncId: string
+  deletedAt: number
+}
+
+export type SyncMetaKey =
+  | 'driveFolderId'
+  | 'lastSyncAt'
+  | 'lastIndexFileId'
+  | 'lastIndexEtag'
+
+export interface SyncMeta {
+  key: SyncMetaKey
+  value: string
 }

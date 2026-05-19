@@ -3,6 +3,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../db'
 import AppHeader from '../components/AppHeader'
 import type { Category } from '../types'
+import { makeSyncId } from '../utils/ids'
 
 interface FlatRow {
   id: number
@@ -72,6 +73,7 @@ export default function CategoriesScreen() {
     if (!newName.trim() || addingParentId === undefined) return
     const now = Date.now()
     await db.categories.add({
+      syncId: makeSyncId(),
       name: newName.trim(),
       parentId: addingParentId,
       createdAt: now,
@@ -113,15 +115,22 @@ export default function CategoriesScreen() {
         : `למחוק את "${name}"?`
     const msg = affectedCount > 0 ? `${baseMsg}\n${affectedCount} מתכונים יאבדו את הקטגוריה.` : baseMsg
     if (!confirm(msg)) return
-    await db.transaction('rw', db.categories, db.recipes, async () => {
+    const now = Date.now()
+    await db.transaction('rw', db.categories, db.recipes, db.tombstones, async () => {
       if (recipes) {
         for (const r of recipes) {
           if (r.id != null && r.categoryId != null && descendants.has(r.categoryId)) {
-            await db.recipes.update(r.id, { categoryId: null, updatedAt: Date.now() })
+            await db.recipes.update(r.id, { categoryId: null, updatedAt: now })
           }
         }
       }
-      await db.categories.bulkDelete(Array.from(descendants))
+      const ids = Array.from(descendants)
+      const rows = await db.categories.bulkGet(ids)
+      const tombstones = rows
+        .filter((c): c is Category => c != null && !!c.syncId)
+        .map((c) => ({ entity: 'category' as const, syncId: c.syncId, deletedAt: now }))
+      if (tombstones.length > 0) await db.tombstones.bulkAdd(tombstones)
+      await db.categories.bulkDelete(ids)
     })
   }
 

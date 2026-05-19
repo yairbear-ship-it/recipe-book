@@ -60,8 +60,20 @@ export default function RecipeDetailScreen() {
 
   const deleteRecipe = async () => {
     if (!confirm(`למחוק את "${recipe.title}"?`)) return
-    await db.images.where({ recipeId }).delete()
-    await db.recipes.delete(recipeId)
+    const now = Date.now()
+    await db.transaction('rw', db.images, db.recipes, db.tombstones, async () => {
+      const imgs = await db.images.where({ recipeId }).toArray()
+      const tombstones: { entity: 'image' | 'recipe'; syncId: string; deletedAt: number }[] = []
+      for (const i of imgs) {
+        if (i.syncId) tombstones.push({ entity: 'image', syncId: i.syncId, deletedAt: now })
+      }
+      if (recipe.syncId) {
+        tombstones.push({ entity: 'recipe', syncId: recipe.syncId, deletedAt: now })
+      }
+      if (tombstones.length > 0) await db.tombstones.bulkAdd(tombstones)
+      await db.images.where({ recipeId }).delete()
+      await db.recipes.delete(recipeId)
+    })
     navigate('/', { replace: true })
   }
 

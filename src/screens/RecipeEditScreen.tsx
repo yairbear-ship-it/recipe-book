@@ -5,6 +5,7 @@ import AppHeader from '../components/AppHeader'
 import CategoryPicker from '../components/CategoryPicker'
 import PhotoCapture, { type PendingAttachment } from '../components/PhotoCapture'
 import type { AttachmentType, RecipeImage } from '../types'
+import { makeSyncId } from '../utils/ids'
 
 interface ExistingPhoto {
   imageId: number
@@ -96,14 +97,26 @@ export default function RecipeEditScreen() {
 
       let recipeId: number
       if (isNew) {
-        recipeId = (await db.recipes.add({ ...recipeData, createdAt: now })) as number
+        recipeId = (await db.recipes.add({
+          ...recipeData,
+          syncId: makeSyncId(),
+          createdAt: now,
+        })) as number
       } else {
         recipeId = editingId!
         await db.recipes.update(recipeId, recipeData)
       }
 
       if (removedExisting.size > 0) {
-        await db.images.bulkDelete(Array.from(removedExisting))
+        // Record tombstones first so the sync engine knows to delete the
+        // matching Drive files. Then physically remove the rows.
+        const toRemove = Array.from(removedExisting)
+        const removedRows = await db.images.bulkGet(toRemove)
+        const tombstones = removedRows
+          .filter((r): r is RecipeImage => r != null && !!r.syncId)
+          .map((r) => ({ entity: 'image' as const, syncId: r.syncId, deletedAt: now }))
+        if (tombstones.length > 0) await db.tombstones.bulkAdd(tombstones)
+        await db.images.bulkDelete(toRemove)
       }
 
       const maxCardOrder = existingCards.length - 1
@@ -111,6 +124,7 @@ export default function RecipeEditScreen() {
 
       const newImageRecords: Omit<RecipeImage, 'id'>[] = [
         ...newCards.map((p, i) => ({
+          syncId: makeSyncId(),
           recipeId,
           kind: 'card' as const,
           order: maxCardOrder + 1 + i,
@@ -123,6 +137,7 @@ export default function RecipeEditScreen() {
           fileName: p.fileName,
         })),
         ...newDishes.map((p, i) => ({
+          syncId: makeSyncId(),
           recipeId,
           kind: 'dish' as const,
           order: maxDishOrder + 1 + i,

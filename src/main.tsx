@@ -3,6 +3,8 @@ import { HashRouter } from 'react-router-dom'
 import './index.css'
 import App from './App.tsx'
 import { seedIfEmpty } from './db'
+import { isConnected } from './sync/oauth'
+import { syncNow } from './sync/sync'
 
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.getRegistrations().then((regs) => {
@@ -25,6 +27,15 @@ window.addEventListener('unhandledrejection', (e) => {
 })
 
 seedIfEmpty().catch((e) => console.error('Seed failed:', e))
+
+// Auto-sync on startup if a session token is already cached. Failures are
+// non-fatal: the UI's Settings screen will surface any errors when the user
+// presses Sync manually.
+if (isConnected()) {
+  setTimeout(() => {
+    syncNow().catch((e) => console.warn('Background sync failed:', e))
+  }, 2000)
+}
 
 createRoot(document.getElementById('root')!).render(
   <HashRouter>

@@ -4,6 +4,7 @@ import RecipeListScreen from './screens/RecipeListScreen'
 import RecipeDetailScreen from './screens/RecipeDetailScreen'
 import RecipeEditScreen from './screens/RecipeEditScreen'
 import CategoriesScreen from './screens/CategoriesScreen'
+import SettingsScreen from './screens/SettingsScreen'
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
       <Route path="/recipe/:id" element={<RecipeDetailScreen />} />
       <Route path="/recipe/:id/edit" element={<RecipeEditScreen />} />
       <Route path="/categories" element={<CategoriesScreen />} />
+      <Route path="/settings" element={<SettingsScreen />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
